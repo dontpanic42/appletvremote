@@ -61,9 +61,9 @@ const Sidebar = ({
       <div className="sidebar-header">
         <Smartphone size={28} color="#007aff" />
         <h2>Remote</h2>
-        {/* Mobile close button shown only when a device is being controlled */}
+        {/* Close button shown only when a device is being controlled and sidebar is in overlay mode */}
         {connectedDevice && (
-          <button className="mobile-only sidebar-close-btn" onClick={onCloseMobile}>
+          <button className="sidebar-close-btn" onClick={onCloseMobile}>
             <X size={24} />
           </button>
         )}

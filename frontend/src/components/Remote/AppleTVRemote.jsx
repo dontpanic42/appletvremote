@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { Power, ArrowLeft, Menu as MenuIcon, Play, Pause, Plus, Minus, Tv, LayoutGrid } from 'lucide-react';
+import { Play, Pause, Plus, Minus, Tv } from 'lucide-react';
 import NowPlaying from './NowPlaying';
 import Touchpad from './Touchpad';
 import AppDrawer from './AppDrawer';
+import FavoritesSidebar from './FavoritesSidebar';
+import RemoteHeader from './RemoteHeader';
 
 /**
  * AppleTVRemote Component
@@ -14,8 +16,7 @@ const AppleTVRemote = ({
   nowPlaying, 
   apps,
   onCommand, 
-  onDisconnect, 
-  onOpenSidebar,
+  onToggleSidebar,
   onLaunchApp,
   onToggleFavorite,
   onRefreshApps
@@ -24,7 +25,7 @@ const AppleTVRemote = ({
 
   return (
     <div className="remote-viewer-wrapper">
-      {/* Background artwork sits in the non-scrolling wrapper */}
+      {/* Background artwork sitting firmly behind the scrolling content */}
       {nowPlaying?.artwork && (
         <div 
           className="artwork-background" 
@@ -32,30 +33,17 @@ const AppleTVRemote = ({
         ></div>
       )}
       
-      {/* Scrollable content container */}
+      {/* Scrollable content area */}
       <div className="remote-scroll-viewport">
         <div className="remote-layout-horizontal">
-            {/* Main Remote Core */}
+            {/* Main Remote Body */}
             <div className="remote-main-column">
-                <div className="remote-top-bar">
-                    <button className="mobile-menu-btn" onClick={onOpenSidebar}>
-                        <MenuIcon size={24} />
-                    </button>
-                    <button className="close-remote-btn desktop-only" onClick={onDisconnect}>
-                        <ArrowLeft size={20} /> <span>Back</span>
-                    </button>
-                    <div className="remote-active-name">
-                        {device.name}
-                    </div>
-                    <div className="remote-header-actions">
-                        <button className="icon-btn-minimal" onClick={() => setIsAppDrawerOpen(true)} title="Applications">
-                            <LayoutGrid size={22} />
-                        </button>
-                        <button className="pwr-btn" onClick={() => onCommand('power_toggle')} title="Power Toggle">
-                            <Power size={22} />
-                        </button>
-                    </div>
-                </div>
+                <RemoteHeader 
+                    deviceName={device.name}
+                    onToggleSidebar={onToggleSidebar}
+                    onOpenDrawer={() => setIsAppDrawerOpen(true)}
+                    onPowerToggle={() => onCommand('power_toggle')}
+                />
 
                 <div className="compact-ios-remote">
                     <NowPlaying metadata={nowPlaying} />
@@ -91,39 +79,16 @@ const AppleTVRemote = ({
                 </div>
             </div>
 
-            {/* Favorite Apps Sidebar (Vertical) */}
-            {apps.favorites.length > 0 && (
-                <div className="remote-favorites-sidebar desktop-only">
-                    <div className="fav-sidebar-list">
-                        {apps.favorites.map(app => (
-                            <button 
-                                key={app.bundle_id} 
-                                className="fav-sidebar-item" 
-                                onClick={() => onLaunchApp(app.bundle_id)}
-                                title={app.name}
-                            >
-                                <div className="fav-app-icon">
-                                    {app.icon_url ? (
-                                        <img src={app.icon_url} alt={app.name} className="icon-img" />
-                                    ) : (
-                                        app.name.charAt(0).toUpperCase()
-                                    )}
-                                </div>
-                                <span className="fav-app-name">{app.name}</span>
-                            </button>
-                        ))}
-                        <button className="fav-sidebar-item more" onClick={() => setIsAppDrawerOpen(true)}>
-                            <div className="fav-app-icon">
-                                <LayoutGrid size={18} />
-                            </div>
-                            <span className="fav-app-name">More</span>
-                        </button>
-                    </div>
-                </div>
-            )}
+            {/* Favorite Apps Sidebar */}
+            <FavoritesSidebar 
+                favorites={apps.favorites}
+                onLaunchApp={onLaunchApp}
+                onOpenDrawer={() => setIsAppDrawerOpen(true)}
+            />
         </div>
       </div>
 
+      {/* Applications Drawer Panel */}
       <AppDrawer 
         isOpen={isAppDrawerOpen}
         onClose={() => setIsAppDrawerOpen(false)}

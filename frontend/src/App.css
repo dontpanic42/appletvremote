@@ -53,6 +53,16 @@ html, body, #root {
   z-index: 100;
 }
 
+.App.connected .sidebar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  transform: translateX(-100%);
+}
+
+.App.connected.sidebar-open .sidebar {
+  transform: translateX(0);
+}
+
 .sidebar-header {
   padding: 24px;
   display: flex;
@@ -70,6 +80,7 @@ html, body, #root {
 
 .sidebar-close-btn {
   background: none; border: none; color: white; cursor: pointer; padding: 4px;
+  display: flex; align-items: center; justify-content: center;
 }
 
 .sidebar-scroll-area {
@@ -290,7 +301,7 @@ html, body, #root {
   width: 100%;
   height: 100%;
   position: relative;
-  overflow: hidden; /* Clips the background artwork strictly */
+  overflow: hidden;
 }
 
 .remote-scroll-viewport {
@@ -301,7 +312,7 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center; /* Center by default */
   padding: 40px 20px;
   box-sizing: border-box;
   position: relative;
@@ -310,7 +321,7 @@ html, body, #root {
 
 .artwork-background {
   position: absolute;
-  inset: -10%; /* Expand beyond edges to ensure blur coverage */
+  inset: -10%; 
   background-size: cover;
   background-position: center;
   filter: blur(60px) brightness(0.5) saturate(1.2);
@@ -323,7 +334,7 @@ html, body, #root {
 .remote-layout-horizontal {
   display: flex;
   align-items: center;
-  gap: 25px;
+  gap: 30px;
   z-index: 20;
 }
 
@@ -331,6 +342,29 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+/* Sidebar Toggle Button */
+.sidebar-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  transition: color 0.2s;
+}
+
+.sidebar-toggle-btn:hover { color: white; }
+
+.sidebar-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0,0,0,0.7);
+  z-index: 90;
+  backdrop-filter: blur(4px);
 }
 
 /* Now Playing & Artwork */
@@ -527,15 +561,23 @@ html, body, #root {
 
 /* Remote Header & Top Bar */
 .remote-top-bar {
-  width: 100%; max-width: 340px; display: grid; grid-template-columns: 60px 1fr 60px; align-items: center; margin-bottom: 20px; z-index: 30;
+  width: 100%; max-width: 340px; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-bottom: 20px; z-index: 30;
 }
 
-.mobile-menu-btn {
-  background: none; border: none; color: white; cursor: pointer; padding: 8px; display: none; align-items: center; justify-content: flex-start;
+.remote-header-left {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.remote-header-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .remote-active-name { font-weight: 600; font-size: 1.1em; color: var(--text-secondary); text-align: center; }
-.remote-top-bar > *:last-child { justify-self: end; display: flex; justify-content: flex-end; }
 
 .remote-header-actions { display: flex; align-items: center; gap: 15px; }
 
@@ -543,10 +585,6 @@ html, body, #root {
   background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: color 0.2s;
 }
 .icon-btn-minimal:hover { color: white; }
-
-.close-remote-btn {
-  background: none; border: none; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.9em; padding: 8px 0; justify-content: flex-start;
-}
 
 .pwr-btn { background: none; border: none; color: var(--accent-red); opacity: 0.7; cursor: pointer; transition: opacity 0.2s; padding: 8px; }
 .pwr-btn:hover { opacity: 1; }
@@ -578,7 +616,7 @@ html, body, #root {
 .nav-tap.center:active { transform: scale(0.95); }
 
 .remote-lower-grid { display: flex; justify-content: space-between; }
-.remote-col { display: column; gap: 20px; width: 80px; align-items: center; }
+.remote-col { display: flex; flex-direction: column; gap: 30px; width: 80px; align-items: center; }
 
 .btn-round {
   width: 70px; height: 70px; border-radius: 50%; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s;
@@ -615,12 +653,19 @@ html, body, #root {
 @media (max-width: 768px) {
   .sidebar { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; transform: translateX(-100%); }
   .sidebar-open .sidebar { transform: translateX(0); }
-  .sidebar-overlay { position: absolute; inset: 0; background-color: rgba(0,0,0,0.7); z-index: 90; backdrop-filter: blur(4px); }
   .main-viewer { width: 100%; }
-  .mobile-menu-btn { display: flex; }
   .remote-top-bar { max-width: 100%; }
   .remote-layout-horizontal { gap: 10px; }
-  .remote-favorites-sidebar { display: none; } /* Hide on mobile to save space */
+  .remote-favorites-sidebar { display: none; } 
+  
+  .remote-scroll-viewport {
+    padding-top: 40px; 
+    justify-content: center;
+  }
+
+  .sidebar-toggle-btn.mobile-only {
+    display: flex !important;
+  }
 }
 
 /* Animations */

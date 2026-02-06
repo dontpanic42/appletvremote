@@ -2,6 +2,60 @@ import React, { useState } from 'react';
 import { X, Star, Play, Search, LayoutGrid, RefreshCw } from 'lucide-react';
 
 /**
+ * AppGridItem Component
+ * Renders a single app in the Favorites grid.
+ */
+const AppGridItem = ({ app, onLaunch, onToggleFavorite }) => (
+  <div className="app-item favorite" onClick={() => onLaunch(app.bundle_id)}>
+    <div className="app-icon-mini">
+      {app.icon_url ? (
+        <img src={app.icon_url} alt={app.name} className="icon-img" />
+      ) : (
+        app.name.charAt(0).toUpperCase()
+      )}
+    </div>
+    <span className="app-name">{app.name}</span>
+    <button 
+      className="fav-btn active" 
+      onClick={(e) => { e.stopPropagation(); onToggleFavorite(app.bundle_id, app.name, false); }}
+    >
+      <Star size={16} fill="currentColor" />
+    </button>
+  </div>
+);
+
+/**
+ * AppListItem Component
+ * Renders a single app in the vertical search results list.
+ */
+const AppListItem = ({ app, onLaunch, onToggleFavorite }) => (
+  <div className="app-list-item" onClick={() => onLaunch(app.bundle_id)}>
+    <div className="app-icon-rect">
+      {app.icon_url ? (
+        <img src={app.icon_url} alt={app.name} className="icon-img" />
+      ) : (
+        app.name.charAt(0).toUpperCase()
+      )}
+    </div>
+    <div className="app-info-main">
+      <span className="app-name-large">{app.name}</span>
+      <span className="app-id-small">{app.bundle_id}</span>
+    </div>
+    <div className="app-item-actions">
+      <button 
+        className={`fav-btn ${app.is_favorite ? 'active' : ''}`}
+        onClick={(e) => { e.stopPropagation(); onToggleFavorite(app.bundle_id, app.name, !app.is_favorite, app.icon_url); }}
+      >
+        <Star size={20} fill={app.is_favorite ? "currentColor" : "none"} />
+      </button>
+      <div className="launch-indicator">
+          <Play size={16} fill="currentColor" />
+      </div>
+    </div>
+  </div>
+);
+
+/**
  * AppDrawer Component
  * 
  * A sliding panel that allows users to view all launchable apps,
@@ -65,22 +119,12 @@ const AppDrawer = ({
               <h3>Favorites</h3>
               <div className="app-grid">
                 {apps.favorites.map(app => (
-                  <div key={app.bundle_id} className="app-item favorite" onClick={() => onLaunch(app.bundle_id)}>
-                    <div className="app-icon-mini">
-                      {app.icon_url ? (
-                        <img src={app.icon_url} alt={app.name} className="icon-img" />
-                      ) : (
-                        app.name.charAt(0).toUpperCase()
-                      )}
-                    </div>
-                    <span className="app-name">{app.name}</span>
-                    <button 
-                      className="fav-btn active" 
-                      onClick={(e) => { e.stopPropagation(); onToggleFavorite(app.bundle_id, app.name, false); }}
-                    >
-                      <Star size={16} fill="currentColor" />
-                    </button>
-                  </div>
+                  <AppGridItem 
+                    key={app.bundle_id} 
+                    app={app} 
+                    onLaunch={onLaunch} 
+                    onToggleFavorite={onToggleFavorite} 
+                  />
                 ))}
               </div>
             </section>
@@ -91,30 +135,12 @@ const AppDrawer = ({
             <h3>{search ? 'Search Results' : 'All Apps'}</h3>
             <div className="app-list-vertical">
               {filteredApps.length > 0 ? filteredApps.map(app => (
-                <div key={app.bundle_id} className="app-list-item" onClick={() => onLaunch(app.bundle_id)}>
-                  <div className="app-icon-rect">
-                    {app.icon_url ? (
-                      <img src={app.icon_url} alt={app.name} className="icon-img" />
-                    ) : (
-                      app.name.charAt(0).toUpperCase()
-                    )}
-                  </div>
-                  <div className="app-info-main">
-                    <span className="app-name-large">{app.name}</span>
-                    <span className="app-id-small">{app.bundle_id}</span>
-                  </div>
-                  <div className="app-item-actions">
-                    <button 
-                      className={`fav-btn ${app.is_favorite ? 'active' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); onToggleFavorite(app.bundle_id, app.name, !app.is_favorite, app.icon_url); }}
-                    >
-                      <Star size={20} fill={app.is_favorite ? "currentColor" : "none"} />
-                    </button>
-                    <div className="launch-indicator">
-                        <Play size={16} fill="currentColor" />
-                    </div>
-                  </div>
-                </div>
+                <AppListItem 
+                  key={app.bundle_id} 
+                  app={app} 
+                  onLaunch={onLaunch} 
+                  onToggleFavorite={onToggleFavorite} 
+                />
               )) : (
                 <div className="drawer-empty">
                   {apps.all_apps.length === 0 ? (
