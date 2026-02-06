@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 
-const WS_URL = 'ws://localhost:8000/ws';
+const getWsUrl = () => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  // If running in development (vite), we might need to specify the backend port
+  // If running in production (served by FastAPI), host will already be correct
+  return process.env.NODE_ENV === 'development' 
+    ? `${protocol}//localhost:8000/ws` 
+    : `${protocol}//${host}/ws`;
+};
+
+const WS_URL = getWsUrl();
 const RECONNECT_DELAY = 3000;
 
 /**

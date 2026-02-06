@@ -285,10 +285,10 @@ body {
   inset: 0;
   background-size: cover;
   background-position: center;
-  filter: blur(60px) brightness(0.4);
+  filter: blur(60px) brightness(0.5) saturate(1.2);
   opacity: 0.6;
   z-index: 0;
-  transition: background-image 1s ease-in-out;
+  transition: background-image 1.2s ease-in-out;
 }
 
 .now-playing-section {

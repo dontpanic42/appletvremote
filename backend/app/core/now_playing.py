@@ -8,7 +8,7 @@ class NowPlayingListener(PushListener):
     """
     Listener for 'push updates' from Apple TV.
     Triggers artwork and metadata fetching when playback state or active app changes.
-    Includes a fallback polling mechanism to ensure metadata stays in sync.
+    Includes a fallback polling mechanism and retry logic for artwork.
     """
     def __init__(self, atv, websocket, loop):
         self.atv = atv
@@ -17,15 +17,17 @@ class NowPlayingListener(PushListener):
         self.last_artwork_id: Optional[str] = None
         self.last_artwork_data: Optional[str] = None
         self.last_title: Optional[str] = None
+        self.last_artist: Optional[str] = None
         self.last_app: Optional[str] = None
+        self.last_device_state: Optional[str] = None
         self.is_running = True
         
-        # Start a background sync task to catch updates that push might miss
+        # Start a background sync task
         self.loop.create_task(self._periodic_sync())
 
     def playstatus_update(self, updater, playstatus: Playing) -> None:
         """Called by pyatv when playback state or metadata changes."""
-        print(f"DEBUG: Push update received: {playstatus.title} ({playstatus.device_state.name})")
+        print(f"DEBUG: Push update received: {playstatus.title} by {playstatus.artist} ({playstatus.device_state.name})")
         self.loop.create_task(self._update_now_playing(playstatus))
 
     def playstatus_error(self, updater, exception: Exception) -> None:
@@ -48,19 +50,26 @@ class NowPlayingListener(PushListener):
     async def _periodic_sync(self):
         """Fallback polling to ensure metadata is updated even if push updates fail."""
         while self.is_running:
-            await asyncio.sleep(10) # Poll every 10 seconds as a safety net
+            await asyncio.sleep(8) 
             try:
                 if self.atv:
                     playstatus = await self.atv.metadata.playing()
-                    # Only trigger update if something meaningful changed
-                    if playstatus.title != self.last_title or playstatus.device_state.name.lower() != self.last_device_state:
-                        print("DEBUG: Periodic sync detected change, updating...")
+                    
+                    # Detect if something changed or if we are missing artwork for a known song
+                    changed = (playstatus.title != self.last_title or 
+                               playstatus.artist != self.last_artist or
+                               playstatus.device_state.name.lower() != self.last_device_state)
+                    
+                    missing_art = (playstatus.title and not self.last_artwork_data)
+                    
+                    if changed or missing_art:
+                        print(f"DEBUG: Periodic sync triggering update (Changed: {changed}, Missing Art: {missing_art})")
                         await self._update_now_playing(playstatus)
-            except:
-                pass
+            except Exception as e:
+                print(f"DEBUG: Periodic sync error: {e}")
 
     async def _update_now_playing(self, playstatus: Playing):
-        """Fetch artwork safely and send full status to frontend."""
+        """Fetch artwork safely with retries and send full status to frontend."""
         try:
             current_artwork_id = None
             current_app = None
@@ -80,31 +89,42 @@ class NowPlayingListener(PushListener):
                 pass
             
             # 3. Determine if we need to fetch NEW artwork
-            # We fetch if: App changed, Title changed, or Artwork ID changed
+            # Check for any change in track identification
+            changed_track = (playstatus.title != self.last_title or 
+                            playstatus.artist != self.last_artist or 
+                            playstatus.album != getattr(self, 'last_album', None))
             changed_app = current_app != self.last_app
-            changed_title = playstatus.title != self.last_title
             changed_art_id = current_artwork_id != self.last_artwork_id
             
-            if changed_app or changed_title or changed_art_id:
-                print(f"DEBUG: Metadata change detected. Fetching artwork... (App: {current_app}, Title: {playstatus.title})")
-                try:
-                    artwork = await asyncio.wait_for(self.atv.metadata.artwork(), timeout=3.0)
-                    if artwork:
-                        b64_artwork = base64.b64encode(artwork.bytes).decode('utf-8')
-                        self.last_artwork_data = f"data:{artwork.mimetype};base64,{b64_artwork}"
-                    else:
+            if changed_track or changed_app or changed_art_id:
+                print(f"DEBUG: Fetching new artwork for: {playstatus.title}")
+                
+                # Retry logic: sometimes the device needs a moment to serve the new artwork
+                for attempt in range(3):
+                    try:
+                        artwork = await asyncio.wait_for(self.atv.metadata.artwork(), timeout=3.0)
+                        if artwork:
+                            b64_artwork = base64.b64encode(artwork.bytes).decode('utf-8')
+                            self.last_artwork_data = f"data:{artwork.mimetype};base64,{b64_artwork}"
+                            print(f"DEBUG: Successfully fetched artwork on attempt {attempt+1}")
+                            break
+                        else:
+                            print(f"DEBUG: Artwork returned None on attempt {attempt+1}")
+                            self.last_artwork_data = None
+                    except Exception as e:
+                        print(f"DEBUG: Artwork fetch attempt {attempt+1} failed: {e}")
                         self.last_artwork_data = None
-                except Exception as e:
-                    print(f"DEBUG: Artwork fetch failed: {e}")
-                    # On failure, we clear it if the app/title changed to avoid showing stale art
-                    if changed_app or changed_title:
-                        self.last_artwork_data = None
+                    
+                    if attempt < 2:
+                        await asyncio.sleep(0.5) # Wait before retry
                 
                 self.last_artwork_id = current_artwork_id
                 self.last_title = playstatus.title
+                self.last_artist = playstatus.artist
+                self.last_album = playstatus.album
                 self.last_app = current_app
 
-            # 4. Fallback title logic for display
+            # 4. Construct display metadata
             display_title = playstatus.title
             display_artist = playstatus.artist or playstatus.album
             
@@ -122,7 +142,7 @@ class NowPlayingListener(PushListener):
                 "title": display_title,
                 "artist": display_artist or "Apple TV",
                 "album": playstatus.album,
-                "artwork": self.last_artwork_data, # Use the cached artwork data
+                "artwork": self.last_artwork_data,
                 "has_artwork": self.last_artwork_data is not None,
                 "device_state": self.last_device_state,
                 "app": current_app

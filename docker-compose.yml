@@ -1,0 +1,19 @@
+services:
+  atv-remote:
+    build: .
+    image: atv-remote:latest
+    container_name: atv-remote
+    restart: unless-stopped
+    network_mode: host # Required for pyatv discovery (mDNS)
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - DATABASE_PATH=/app/data/atv_remote.db
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

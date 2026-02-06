@@ -1,14 +1,20 @@
+import os
 import aiosqlite
 import asyncio
 from typing import List, Optional, Dict
 
-DATABASE_URL = "atv_remote.db"
+# Configurable database path for Docker/Local persistence
+DATABASE_URL = os.getenv("DATABASE_PATH", "atv_remote.db")
 
 async def init_db():
     """
     Initialize the SQLite database with multi-pairing and favorites schema.
-    Includes a robust migration to ensure the icon_url column exists.
     """
+    # Ensure directory exists if path is provided
+    db_dir = os.path.dirname(DATABASE_URL)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
+
     async with aiosqlite.connect(DATABASE_URL) as db:
         # 1. Create devices table
         await db.execute("""

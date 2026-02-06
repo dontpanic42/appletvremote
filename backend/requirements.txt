@@ -1,0 +1,7 @@
+fastapi==0.128.2
+uvicorn[standard]==0.40.0
+pyatv==0.17.0
+aiosqlite==0.22.1
+aiohttp==3.13.3
+websockets==16.0
+pydantic==2.12.5
