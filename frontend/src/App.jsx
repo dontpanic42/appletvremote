@@ -214,12 +214,11 @@ function App() {
             <div className="sidebar-content">
                 <div className="sidebar-device-list">
                 {pairedDevices.length > 0 ? pairedDevices.map(device => (
-                    <div 
-                    key={device.device_id} 
-                    className={`sidebar-device-item ${device.online ? 'online' : 'offline'} ${connectedDevice?.device_id === device.device_id ? 'active' : ''}`}
-                    onClick={() => device.online && handleConnect(device.address)}
-                    >
-                    <div className={`device-status-dot ${connectingAddress === device.address || device.online === null ? 'loading' : (device.online ? 'online' : 'offline')}`}></div>
+                                    <div 
+                                      key={device.device_id} 
+                                      className={`sidebar-device-item ${device.online ? 'online' : 'offline'} ${connectedDevice?.device_id === device.device_id ? 'active' : ''}`}
+                                      onClick={() => (device.online || device.paired) && handleConnect(device.address)}
+                                    >                    <div className={`device-status-dot ${connectingAddress === device.address || device.online === null ? 'loading' : (device.online ? 'online' : 'offline')}`}></div>
                     <div className="item-info">
                         <span className="device-name">{device.name}</span>
                         <span className="device-addr">{device.address}</span>
@@ -321,7 +320,7 @@ function App() {
                 <div className="remote-active-name">
                     {connectedDevice.name}
                 </div>
-                <button className="pwr-btn" onClick={() => sendRemoteCommand('power_off')}>
+                <button className="pwr-btn" onClick={() => sendRemoteCommand('power_toggle')}>
                   <Power size={22} />
                 </button>
             </div>
