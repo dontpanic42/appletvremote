@@ -7,83 +7,125 @@ from typing import Optional
 class NowPlayingListener(PushListener):
     """
     Listener for 'push updates' from Apple TV.
-    Triggers artwork and metadata fetching when playback state changes.
+    Triggers artwork and metadata fetching when playback state or active app changes.
+    Includes a fallback polling mechanism to ensure metadata stays in sync.
     """
     def __init__(self, atv, websocket, loop):
         self.atv = atv
         self.websocket = websocket
         self.loop = loop
         self.last_artwork_id: Optional[str] = None
+        self.last_artwork_data: Optional[str] = None
         self.last_title: Optional[str] = None
+        self.last_app: Optional[str] = None
+        self.is_running = True
+        
+        # Start a background sync task to catch updates that push might miss
+        self.loop.create_task(self._periodic_sync())
 
     def playstatus_update(self, updater, playstatus: Playing) -> None:
         """Called by pyatv when playback state or metadata changes."""
-        print(f"DEBUG: playstatus_update: {playstatus.title} ({playstatus.device_state.name})")
+        print(f"DEBUG: Push update received: {playstatus.title} ({playstatus.device_state.name})")
         self.loop.create_task(self._update_now_playing(playstatus))
 
     def playstatus_error(self, updater, exception: Exception) -> None:
         """Called when an error occurs during push updates."""
         print(f"DEBUG: Push update error: {exception}")
 
+    async def stop(self):
+        """Stop the listener and background tasks."""
+        self.is_running = False
+
     async def initial_fetch(self):
         """Perform an initial fetch of playback state immediately after connecting."""
         try:
-            print("DEBUG: initial_fetch starting...")
+            print("DEBUG: Performing initial metadata sync...")
             playstatus = await asyncio.wait_for(self.atv.metadata.playing(), timeout=5.0)
             await self._update_now_playing(playstatus)
         except Exception as e:
             print(f"DEBUG: Initial fetch failed: {e}")
 
+    async def _periodic_sync(self):
+        """Fallback polling to ensure metadata is updated even if push updates fail."""
+        while self.is_running:
+            await asyncio.sleep(10) # Poll every 10 seconds as a safety net
+            try:
+                if self.atv:
+                    playstatus = await self.atv.metadata.playing()
+                    # Only trigger update if something meaningful changed
+                    if playstatus.title != self.last_title or playstatus.device_state.name.lower() != self.last_device_state:
+                        print("DEBUG: Periodic sync detected change, updating...")
+                        await self._update_now_playing(playstatus)
+            except:
+                pass
+
     async def _update_now_playing(self, playstatus: Playing):
         """Fetch artwork safely and send full status to frontend."""
         try:
-            artwork_data = None
             current_artwork_id = None
+            current_app = None
+            self.last_device_state = playstatus.device_state.name.lower()
             
-            # Safely get artwork ID
+            # 1. Resolve current App
             try:
-                current_artwork_id = self.atv.metadata.artwork_id
-            except Exception:
+                app_info = self.atv.metadata.app
+                current_app = app_info.name if app_info else None
+            except:
                 pass
             
-            # Determine if we should attempt to fetch artwork
-            should_fetch = (current_artwork_id != self.last_artwork_id) or \
-                           (current_artwork_id is None and playstatus.title != self.last_title)
-
-            if should_fetch and playstatus.title:
+            # 2. Resolve Artwork ID
+            try:
+                current_artwork_id = self.atv.metadata.artwork_id
+            except:
+                pass
+            
+            # 3. Determine if we need to fetch NEW artwork
+            # We fetch if: App changed, Title changed, or Artwork ID changed
+            changed_app = current_app != self.last_app
+            changed_title = playstatus.title != self.last_title
+            changed_art_id = current_artwork_id != self.last_artwork_id
+            
+            if changed_app or changed_title or changed_art_id:
+                print(f"DEBUG: Metadata change detected. Fetching artwork... (App: {current_app}, Title: {playstatus.title})")
                 try:
                     artwork = await asyncio.wait_for(self.atv.metadata.artwork(), timeout=3.0)
                     if artwork:
                         b64_artwork = base64.b64encode(artwork.bytes).decode('utf-8')
-                        artwork_data = f"data:{artwork.mimetype};base64,{b64_artwork}"
-                except Exception:
-                    pass
+                        self.last_artwork_data = f"data:{artwork.mimetype};base64,{b64_artwork}"
+                    else:
+                        self.last_artwork_data = None
+                except Exception as e:
+                    print(f"DEBUG: Artwork fetch failed: {e}")
+                    # On failure, we clear it if the app/title changed to avoid showing stale art
+                    if changed_app or changed_title:
+                        self.last_artwork_data = None
                 
                 self.last_artwork_id = current_artwork_id
                 self.last_title = playstatus.title
+                self.last_app = current_app
 
-            # Fallback title if None
+            # 4. Fallback title logic for display
             display_title = playstatus.title
-            if not display_title:
-                try:
-                    active_app = self.atv.metadata.app
-                    if active_app:
-                        display_title = f"Watching {active_app.name}"
-                except:
-                    pass
+            display_artist = playstatus.artist or playstatus.album
             
             if not display_title:
-                display_title = "Not Playing"
+                if current_app:
+                    display_title = f"Watching {current_app}"
+                    display_artist = "Apple TV"
+                else:
+                    display_title = "Not Playing"
+                    display_artist = "Apple TV"
 
-            print(f"DEBUG: Sending now_playing to frontend: {display_title}")
+            # 5. Send to frontend
             await self.websocket.send_json({
                 "type": "now_playing",
                 "title": display_title,
-                "artist": playstatus.artist or playstatus.album or "Apple TV",
+                "artist": display_artist or "Apple TV",
                 "album": playstatus.album,
-                "artwork": artwork_data,
-                "has_artwork": artwork_data is not None,
-                "device_state": playstatus.device_state.name.lower()
+                "artwork": self.last_artwork_data, # Use the cached artwork data
+                "has_artwork": self.last_artwork_data is not None,
+                "device_state": self.last_device_state,
+                "app": current_app
             })
         except Exception as e:
             print(f"DEBUG: Error in _update_now_playing: {e}")

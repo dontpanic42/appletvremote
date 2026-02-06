@@ -6,15 +6,9 @@ const RECONNECT_DELAY = 3000;
 /**
  * useAppleTV Hook
  * 
- * Custom hook that encapsulates all logic for:
- * 1. Persistent WebSocket communication with the backend.
- * 2. Device discovery and state management.
- * 3. Chained pairing workflow orchestration.
- * 4. Automatic reconnection logic.
- * 5. Remote control command dispatching.
+ * Manages the WebSocket connection and state for Apple TV interactions.
  */
 export const useAppleTV = () => {
-  const [ws, setWs] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [discoveryResults, setDiscoveryResults] = useState([]);
@@ -27,12 +21,14 @@ export const useAppleTV = () => {
   const [pairingError, setPairingError] = useState(null);
   const [nowPlaying, setNowPlaying] = useState(null);
   const [pairingMessage, setPairingMessage] = useState('Enter PIN');
+  const [apps, setApps] = useState({ all_apps: [], favorites: [] });
 
+  const wsRef = useRef(null);
   const discoveryResultsRef = useRef([]);
   const reconnectTimeoutRef = useRef(null);
   const connectedDeviceRef = useRef(null);
 
-  // Sync refs with state to avoid stale closure issues in the WebSocket message loop
+  // Sync refs with state
   useEffect(() => {
     discoveryResultsRef.current = discoveryResults;
   }, [discoveryResults]);
@@ -41,20 +37,17 @@ export const useAppleTV = () => {
     connectedDeviceRef.current = connectedDevice;
   }, [connectedDevice]);
 
-  /**
-   * Establishes the WebSocket connection and defines message handling logic.
-   * Includes automatic reconnection on close.
-   */
   const connectWebSocket = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
+
     console.log('Connecting to WebSocket...');
     const newWs = new WebSocket(WS_URL);
+    wsRef.current = newWs;
 
     newWs.onopen = () => {
       console.log('WebSocket connection established');
-      setWs(newWs);
       setIsConnected(true);
       setIsScanning(true);
-      // Immediately fetch paired devices from DB and start a fresh network scan
       newWs.send(JSON.stringify({ command: 'get_paired' }));
       newWs.send(JSON.stringify({ command: 'discover' }));
       
@@ -72,7 +65,6 @@ export const useAppleTV = () => {
         setIsInitialLoad(false);
         setIsScanning(false);
         
-        // If our current device goes offline, return to selection screen
         const activeDevice = connectedDeviceRef.current;
         if (activeDevice) {
             const current = data.devices.find(d => d.device_id === activeDevice.device_id);
@@ -82,19 +74,28 @@ export const useAppleTV = () => {
             }
         }
       } else if (data.type === 'status') {
-        // Handle successful connection feedback
         if (data.message.startsWith('Connected to')) {
             const deviceName = data.message.split('Connected to ')[1];
+            // Access discovery results via ref to get the most recent data
             const device = discoveryResultsRef.current.find(d => d.name === deviceName);
-            if (device) setConnectedDevice(device);
+            if (device) {
+                setConnectedDevice(device);
+                // Fetch apps immediately upon successful connection, explicitly passing device_id
+                newWs.send(JSON.stringify({ 
+                    command: 'get_apps',
+                    device_id: device.device_id 
+                }));
+            }
             setConnectingAddress(null);
         } else if (data.message === 'Disconnected from Apple TV.') {
             setConnectedDevice(null);
             setNowPlaying(null);
+            setApps({ all_apps: [], favorites: [] });
         }
       } else if (data.type === 'now_playing') {
-          // Push update for metadata and artwork
           setNowPlaying(data);
+      } else if (data.type === 'app_list') {
+          setApps({ all_apps: data.all_apps, favorites: data.favorites });
       } else if (data.type === 'error') {
           setConnectingAddress(null);
           setIsScanning(false);
@@ -103,10 +104,9 @@ export const useAppleTV = () => {
               setPairingError(data.message);
           }
       } else if (data.type === 'pairing_status') {
-          // Chained pairing logic
           if (data.status === 'started') {
               setIsPairing(false); 
-              setPairingPin(''); // Reset for next potential protocol step
+              setPairingPin(''); 
               setPairingError(null);
               setPairingMessage(data.message);
           } else if (data.status === 'completed') {
@@ -114,7 +114,6 @@ export const useAppleTV = () => {
               setPairingDeviceAddress(null);
               setPairingPin('');
               setPairingError(null);
-              // Optimistically update device list before re-scan
               if (data.address) {
                   setDiscoveryResults(prev => prev.map(d => 
                       d.address === data.address ? { ...d, paired: true } : d
@@ -134,8 +133,8 @@ export const useAppleTV = () => {
       setDiscoveryResults([]);
       setIsScanning(false);
       setNowPlaying(null);
+      setApps({ all_apps: [], favorites: [] });
       
-      // Auto-reconnect after delay
       reconnectTimeoutRef.current = setTimeout(connectWebSocket, RECONNECT_DELAY);
     };
 
@@ -143,44 +142,32 @@ export const useAppleTV = () => {
       console.error('WebSocket error:', error);
       newWs.close();
     };
-  }, []); // Logic remains stable regardless of device state
+  }, []);
 
-  // Initial connection
   useEffect(() => {
     connectWebSocket();
     return () => {
+      if (wsRef.current) wsRef.current.close();
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
   }, [connectWebSocket]);
 
-  /**
-   * Helper to send JSON messages over WebSocket.
-   */
   const sendMessage = (message) => {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message));
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(message));
     }
   };
 
-  /**
-   * Request backend to connect to a specific IP address.
-   */
   const handleConnect = (address) => {
     setConnectingAddress(address);
     sendMessage({ command: 'connect', address: address });
   };
 
-  /**
-   * Request backend to terminate current device session.
-   */
   const handleDisconnect = () => {
     sendMessage({ command: 'disconnect' });
     setConnectedDevice(null);
   };
 
-  /**
-   * Initiate the pairing flow for a device and/or protocol.
-   */
   const handleStartPairing = (address, protocol = null) => {
     setPairingDeviceAddress(address);
     setPairingError(null);
@@ -189,9 +176,6 @@ export const useAppleTV = () => {
     sendMessage({ command: 'pair_start', address: address, protocol: protocol });
   };
 
-  /**
-   * Submit the entered PIN code to the backend.
-   */
   const handleSubmitPin = () => {
     if (pairingDeviceAddress && pairingPin) {
       setIsPairing(true);
@@ -206,16 +190,12 @@ export const useAppleTV = () => {
     setPairingError(null);
   };
 
-  /**
-   * Request deletion of device credentials from backend database.
-   */
   const handleDeleteDevice = (device_id) => {
     if (window.confirm('Delete these credentials?')) {
         if (connectedDevice?.device_id === device_id) {
             setConnectedDevice(null);
             setNowPlaying(null);
         }
-        // Optimistic UI update
         setDiscoveryResults(prev => prev.filter(d => d.device_id !== device_id));
         sendMessage({ command: 'delete_device', device_id: device_id });
     }
@@ -228,6 +208,28 @@ export const useAppleTV = () => {
 
   const sendRemoteCommand = (commandType) => {
     if (connectedDevice) sendMessage({ command: commandType });
+  };
+
+  const launchApp = (bundleId) => {
+    sendMessage({ command: 'launch_app', bundle_id: bundleId });
+  };
+
+  const toggleFavorite = (bundleId, name, isFavorite, iconUrl = null) => {
+    sendMessage({ 
+      command: 'toggle_favorite', 
+      bundle_id: bundleId, 
+      name: name, 
+      is_favorite: isFavorite,
+      icon_url: iconUrl,
+      device_id: connectedDeviceRef.current?.device_id
+    });
+  };
+
+  const refreshApps = () => {
+    sendMessage({ 
+        command: 'get_apps',
+        device_id: connectedDeviceRef.current?.device_id 
+    });
   };
 
   return {
@@ -244,6 +246,7 @@ export const useAppleTV = () => {
     pairingError,
     pairingMessage,
     nowPlaying,
+    apps,
     handleConnect,
     handleDisconnect,
     handleStartPairing,
@@ -251,6 +254,9 @@ export const useAppleTV = () => {
     handleCancelPairing,
     handleDeleteDevice,
     handleRescan,
-    sendRemoteCommand
+    sendRemoteCommand,
+    launchApp,
+    toggleFavorite,
+    refreshApps
   };
 };

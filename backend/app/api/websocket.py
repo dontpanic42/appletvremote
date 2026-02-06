@@ -8,13 +8,9 @@ from pyatv.const import FeatureName, FeatureState
 
 # Session stores
 connected_remotes = {} # websocket_id -> pyatv.AppleTV
-# active_pairings now stores: { "handler": ..., "address": ..., "queue": [...] }
-active_pairings = {}
+active_pairings = {}   # websocket_id -> pyatv.PairingHandler
 
 async def handle_websocket(websocket: WebSocket):
-    """
-    Core entry point for all WebSocket connections.
-    """
     await websocket.accept()
     ws_id = str(websocket.client)
     try:
@@ -27,9 +23,6 @@ async def handle_websocket(websocket: WebSocket):
         await _cleanup_session(ws_id)
 
 async def _process_message(websocket, ws_id, raw_msg):
-    """
-    Parse incoming JSON messages and route them to the appropriate handler functions.
-    """
     try:
         data = json.loads(raw_msg)
         command = data.get("command")
@@ -42,6 +35,9 @@ async def _process_message(websocket, ws_id, raw_msg):
             "pair_start": _handle_pair_start,
             "pair_pin": _handle_pair_pin,
             "delete_device": _handle_delete,
+            "get_apps": _handle_get_apps,
+            "launch_app": _handle_launch_app,
+            "toggle_favorite": _handle_toggle_favorite,
         }
         
         if command in handlers:
@@ -49,7 +45,7 @@ async def _process_message(websocket, ws_id, raw_msg):
         else:
             await _handle_remote_cmd(websocket, ws_id, command)
     except Exception as e:
-        print(f"WS Process Error: {e}")
+        print(f"WS Process Error in {command if 'command' in locals() else 'unknown'}: {e}")
 
 async def _handle_discover(websocket, ws_id, data):
     devices = await atv_manager.get_formatted_discovery_results()
@@ -82,93 +78,82 @@ async def _handle_disconnect(websocket, ws_id, data):
     await websocket.send_json({"type": "status", "message": "Disconnected from Apple TV."})
 
 async def _handle_pair_start(websocket, ws_id, data):
-    """
-    Initiate a pairing sequence. If no specific protocol is requested,
-    it identifies all available unpaired services and starts a chained pairing flow.
-    """
-    address = data.get("address")
-    device = atv_manager.discovered_devices_cache.get(address)
-    if not device:
-        await websocket.send_json({"type": "error", "message": "Device not found in cache."})
-        return
-
-    # Determine what to pair
-    requested_proto = data.get("protocol")
-    if requested_proto:
-        queue = [requested_proto]
-    else:
-        # Get all services that aren't paired yet
-        res = await atv_manager.get_formatted_discovery_results()
-        device_info = next((d for d in res if d['address'] == address), None)
-        queue = device_info['unpaired_services'] if device_info else []
-        if not queue: # Fallback to generic best if list is empty
-            queue = [p.name for p in [atv_manager._select_best_pairing_protocol(device)] if p]
-
-    if not queue:
-        await websocket.send_json({"type": "error", "message": "No unpaired services found."})
-        return
-
-    await _start_next_in_pairing_queue(websocket, ws_id, address, queue)
-
-async def _start_next_in_pairing_queue(websocket, ws_id, address, queue):
-    """Helper to start the next pairing handler in the queue."""
-    protocol_to_pair = queue.pop(0)
     try:
-        handler = await atv_manager.start_pairing_session(address, protocol_to_pair)
-        active_pairings[ws_id] = {
-            "handler": handler,
-            "address": address,
-            "queue": queue,
-            "current_proto": protocol_to_pair
-        }
-        await websocket.send_json({
-            "type": "pairing_status", 
-            "status": "started", 
-            "message": f"Enter PIN for {protocol_to_pair}",
-            "protocol": protocol_to_pair,
-            "step": "next" if len(active_pairings[ws_id].get("queue", [])) >= 0 else "final"
-        })
+        handler = await atv_manager.start_pairing_session(data.get("address"), data.get("protocol"))
+        active_pairings[ws_id] = {"handler": handler, "address": data.get("address"), "queue": []}
+        await websocket.send_json({"type": "pairing_status", "status": "started", "message": "Enter PIN"})
     except Exception as e:
-        await websocket.send_json({"type": "error", "message": f"Failed to start {protocol_to_pair}: {e}"})
+        await websocket.send_json({"type": "error", "message": str(e)})
 
 async def _handle_pair_pin(websocket, ws_id, data):
-    """
-    Completes current pairing step. If more protocols are in the queue, 
-    immediately starts the next pairing step.
-    """
     session = active_pairings.get(ws_id)
-    if not session:
-        await websocket.send_json({"type": "error", "message": "No active pairing"})
-        return
-    
-    handler = session["handler"]
-    address = session["address"]
-    queue = session["queue"]
-
+    if not session: return
     try:
-        await atv_manager.finish_pairing_session(handler, data.get("pin"))
-        
-        if queue:
-            # More protocols to pair, start next one immediately
-            print(f"DEBUG: Chaining next pairing protocol from queue: {queue}")
-            await _start_next_in_pairing_queue(websocket, ws_id, address, queue)
-        else:
-            # All done
-            del active_pairings[ws_id]
-            await websocket.send_json({
-                "type": "pairing_status", 
-                "status": "completed", 
-                "address": address,
-                "message": "All services paired successfully!"
-            })
-            await _handle_discover(websocket, ws_id, {})
-            
+        await atv_manager.finish_pairing_session(session["handler"], data.get("pin"))
+        del active_pairings[ws_id]
+        await websocket.send_json({"type": "pairing_status", "status": "completed", "address": session["address"]})
+        await _handle_discover(websocket, ws_id, {})
     except Exception as e:
         await websocket.send_json({"type": "pairing_status", "status": "failed", "message": str(e)})
 
 async def _handle_delete(websocket, ws_id, data):
     await delete_device(data.get("device_id"))
     await _handle_discover(websocket, ws_id, {})
+
+async def _handle_get_apps(websocket, ws_id, data):
+    atv = connected_remotes.get(ws_id)
+    if not atv: return
+    # Try multiple sources for device_id
+    device_id = data.get("device_id") or atv.identifier or getattr(atv.config, 'identifier', None)
+    if not device_id:
+        print("DEBUG: No device_id found for get_apps")
+        return
+    app_data = await atv_remote.get_app_list(atv, device_id)
+    await websocket.send_json({"type": "app_list", **app_data})
+
+async def _handle_launch_app(websocket, ws_id, data):
+    atv = connected_remotes.get(ws_id)
+    if not atv: return
+    success, msg = await atv_remote.launch_app(atv, data.get("bundle_id"))
+    if success:
+        # Give the TV a moment to switch apps, then force a metadata update
+        await asyncio.sleep(1.5)
+        try:
+            playstatus = await atv.metadata.playing()
+            # Find the listener in our connected_remotes or through push_updater
+            if atv.push_updater and hasattr(atv.push_updater, 'listener'):
+                await atv.push_updater.listener._update_now_playing(playstatus)
+        except:
+            pass
+    else:
+        await websocket.send_json({"type": "error", "message": msg})
+
+async def _handle_toggle_favorite(websocket, ws_id, data):
+    atv = connected_remotes.get(ws_id)
+    # Use fallback chain for device_id
+    device_id = data.get("device_id") or (atv.identifier if atv else None) or (getattr(atv.config, 'identifier', None) if atv else None)
+    
+    bundle_id = data.get("bundle_id")
+    name = data.get("name")
+    is_favorite = data.get("is_favorite")
+    icon_url = data.get("icon_url")
+
+    if not device_id:
+        print("DEBUG: Failed to toggle favorite - Device ID not resolved.")
+        return
+
+    await atv_remote.toggle_favorite_app(
+        device_id, 
+        bundle_id, 
+        name, 
+        is_favorite,
+        icon_url
+    )
+    
+    # Refresh app list using the resolved device_id
+    if atv:
+        refresh_data = {"device_id": device_id}
+        await _handle_get_apps(websocket, ws_id, refresh_data)
 
 async def _handle_remote_cmd(websocket, ws_id, command):
     atv = connected_remotes.get(ws_id)

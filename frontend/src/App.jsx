@@ -27,6 +27,8 @@ function App() {
     pairingError,
     pairingMessage,
     nowPlaying,
+    apps,
+    settings,
     handleConnect,
     handleDisconnect,
     handleStartPairing,
@@ -34,7 +36,10 @@ function App() {
     handleCancelPairing,
     handleDeleteDevice,
     handleRescan,
-    sendRemoteCommand
+    sendRemoteCommand,
+    launchApp,
+    toggleFavorite,
+    updateSetting
   } = useAppleTV();
 
   const [expandedSection, setExpandedSection] = useState('paired');
@@ -121,9 +126,14 @@ function App() {
           <AppleTVRemote
             device={connectedDevice}
             nowPlaying={nowPlaying}
+            apps={apps}
+            settings={settings}
             onCommand={sendRemoteCommand}
             onDisconnect={handleDisconnect}
             onOpenSidebar={() => setIsSidebarOpen(true)}
+            onLaunchApp={launchApp}
+            onToggleFavorite={toggleFavorite}
+            onUpdateSetting={updateSetting}
           />
         ) : (
           <div className="no-device-placeholder">
