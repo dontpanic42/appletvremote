@@ -13,8 +13,11 @@
   --border-radius-lg: 20px;
 }
 
-body {
+html, body, #root {
   margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
   background-color: var(--bg-color);
   color: var(--text-primary);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", system-ui, sans-serif;
@@ -23,9 +26,10 @@ body {
 
 .App.sidebar-layout {
   display: flex;
-  height: 100vh;
-  width: 100vw;
+  height: 100%;
+  width: 100%;
   position: relative;
+  overflow: hidden;
 }
 
 /* Responsive Utilities */
@@ -267,30 +271,69 @@ body {
 /* Main Content Area */
 .main-viewer {
   flex: 1;
+  width: 100%;
   background-color: var(--main-color);
   display: flex;
   justify-content: center;
   align-items: center;
   position: relative;
   z-index: 1;
+  overflow: hidden;
 }
 
 .no-device-placeholder { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 .no-device-placeholder h2 { color: var(--text-secondary); }
 .no-device-placeholder p { max-width: 300px; color: #444; font-size: 0.9em; padding: 0 20px; }
 
-/* Now Playing & Artwork */
+/* Remote Layout Orchestration */
+.remote-viewer-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden; /* Clips the background artwork strictly */
+}
+
+.remote-scroll-viewport {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 40px 20px;
+  box-sizing: border-box;
+  position: relative;
+  z-index: 10;
+}
+
 .artwork-background {
   position: absolute;
-  inset: 0;
+  inset: -10%; /* Expand beyond edges to ensure blur coverage */
   background-size: cover;
   background-position: center;
   filter: blur(60px) brightness(0.5) saturate(1.2);
   opacity: 0.6;
   z-index: 0;
   transition: background-image 1.2s ease-in-out;
+  pointer-events: none;
 }
 
+.remote-layout-horizontal {
+  display: flex;
+  align-items: center;
+  gap: 25px;
+  z-index: 20;
+}
+
+.remote-main-column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Now Playing & Artwork */
 .now-playing-section {
   display: flex;
   align-items: center;
@@ -323,26 +366,6 @@ body {
 .track-artist { font-size: 0.8em; color: var(--text-secondary); }
 
 /* Favorite Sidebar (Remote Integrated) */
-.remote-center-container {
-  width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative;
-  padding: 40px 20px;
-  box-sizing: border-box;
-  overflow-y: auto;
-}
-
-.remote-layout-horizontal {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  z-index: 10;
-}
-
-.remote-main-column {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
 .remote-favorites-sidebar {
   width: 70px;
   display: flex;
@@ -391,7 +414,7 @@ body {
 
 .fav-app-icon {
   width: 52px;
-  height: 32px; /* Rectangular tile */
+  height: 32px;
   background-color: #1c1c1e;
   border-radius: 8px;
   display: flex;
@@ -405,11 +428,12 @@ body {
   box-shadow: 0 4px 10px rgba(0,0,0,0.3);
 }
 
-.fav-sidebar-item .icon-img {
+.icon-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: brightness(0.6) saturate(1.2); /* Dark mode look */
+  border-radius: inherit;
+  filter: brightness(0.6) saturate(1.2);
   transition: filter 0.2s;
 }
 
@@ -458,14 +482,10 @@ body {
 
 .empty-notice {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: column; gap: 8px;
 }
 
-.empty-notice .hint {
-  font-size: 0.85em;
-  opacity: 0.6;
-}
+.empty-notice .hint { font-size: 0.85em; opacity: 0.6; }
 
 .drawer-search { padding: 15px 20px; }
 .search-input-wrapper { position: relative; display: flex; align-items: center; }
@@ -480,11 +500,8 @@ body {
 .app-item.favorite { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; position: relative; }
 
 .app-icon-mini { 
-  width: 70px; height: 42px; /* Rectangular tiles in drawer */
-  background-color: #2c2c2e; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4em; font-weight: 700; color: #444; border: 1px solid rgba(255,255,255,0.05); overflow: hidden;
+  width: 70px; height: 42px; background-color: #2c2c2e; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.4em; font-weight: 700; color: #444; border: 1px solid rgba(255,255,255,0.05); overflow: hidden;
 }
-
-.app-icon-mini .icon-img { filter: brightness(0.7) saturate(1.1); }
 
 .app-item .app-name { font-size: 0.75em; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
 
@@ -497,8 +514,7 @@ body {
 .app-list-item:hover { background-color: rgba(255,255,255,0.08); }
 
 .app-icon-rect { 
-  width: 60px; height: 36px; /* Rectangular in list */
-  background-color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #555; overflow: hidden;
+  width: 60px; height: 36px; background-color: #333; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #555; overflow: hidden;
 }
 
 .app-info-main { flex: 1; display: flex; flex-direction: column; gap: 2px; }
@@ -511,7 +527,7 @@ body {
 
 /* Remote Header & Top Bar */
 .remote-top-bar {
-  width: 100%; max-width: 340px; display: grid; grid-template-columns: 60px 1fr 60px; align-items: center; margin-bottom: 20px; z-index: 10;
+  width: 100%; max-width: 340px; display: grid; grid-template-columns: 60px 1fr 60px; align-items: center; margin-bottom: 20px; z-index: 30;
 }
 
 .mobile-menu-btn {
@@ -519,33 +535,14 @@ body {
 }
 
 .remote-active-name { font-weight: 600; font-size: 1.1em; color: var(--text-secondary); text-align: center; }
-.remote-top-bar > *:last-child { 
-  justify-self: end; 
-  display: flex;
-  justify-content: flex-end;
-}
+.remote-top-bar > *:last-child { justify-self: end; display: flex; justify-content: flex-end; }
 
-.remote-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 15px;
-}
+.remote-header-actions { display: flex; align-items: center; gap: 15px; }
 
 .icon-btn-minimal {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s;
+  background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; transition: color 0.2s;
 }
-
-.icon-btn-minimal:hover {
-  color: white;
-}
+.icon-btn-minimal:hover { color: white; }
 
 .close-remote-btn {
   background: none; border: none; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.9em; padding: 8px 0; justify-content: flex-start;
@@ -556,7 +553,7 @@ body {
 
 /* The Compact iOS Remote */
 .compact-ios-remote {
-  background-color: #111; border-radius: 50px; padding: 30px 20px; width: 300px; max-width: 100%; display: flex; flex-direction: column; gap: 20px; border: 1px solid #222; box-shadow: 0 20px 50px rgba(0,0,0,0.8); z-index: 10;
+  background-color: #111; border-radius: 50px; padding: 30px 20px; width: 300px; max-width: 100%; display: flex; flex-direction: column; gap: 20px; border: 1px solid #222; box-shadow: 0 20px 50px rgba(0,0,0,0.8); z-index: 30;
 }
 
 @media (max-height: 700px) {
@@ -581,7 +578,7 @@ body {
 .nav-tap.center:active { transform: scale(0.95); }
 
 .remote-lower-grid { display: flex; justify-content: space-between; }
-.remote-col { display: flex; flex-direction: column; gap: 20px; width: 80px; align-items: center; }
+.remote-col { display: column; gap: 20px; width: 80px; align-items: center; }
 
 .btn-round {
   width: 70px; height: 70px; border-radius: 50%; border: none; color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s;
@@ -622,6 +619,8 @@ body {
   .main-viewer { width: 100%; }
   .mobile-menu-btn { display: flex; }
   .remote-top-bar { max-width: 100%; }
+  .remote-layout-horizontal { gap: 10px; }
+  .remote-favorites-sidebar { display: none; } /* Hide on mobile to save space */
 }
 
 /* Animations */
