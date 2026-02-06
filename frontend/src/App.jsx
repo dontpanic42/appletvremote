@@ -16,7 +16,8 @@ import {
   Circle,
   Smartphone,
   ChevronRight as ChevronRightIcon,
-  Search
+  Menu as MenuIcon,
+  X
 } from 'lucide-react';
 import './App.css';
 
@@ -32,9 +33,10 @@ function App() {
   const [connectingAddress, setConnectingAddress] = useState(null);
   const [pairingDeviceAddress, setPairingDeviceAddress] = useState(null);
   const [pairingPin, setPairingPin] = useState('');
-  const [isPairing, setIsPairing] = useState(false); // New state for pairing loading
-  const [pairingError, setPairingError] = useState(null); // New state for pairing errors
-  const [expandedSection, setExpandedSection] = useState('paired'); // 'paired' or 'new'
+  const [isPairing, setIsPairing] = useState(false);
+  const [pairingError, setPairingError] = useState(null);
+  const [expandedSection, setExpandedSection] = useState('paired');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true); // Control sidebar on mobile
 
   const discoveryResultsRef = useRef([]);
 
@@ -79,16 +81,21 @@ function App() {
             const current = data.devices.find(d => d.device_id === connectedDevice.device_id);
             if (current && !current.online) {
                 setConnectedDevice(null);
+                setIsSidebarOpen(true);
             }
         }
       } else if (data.type === 'status') {
         if (data.message.startsWith('Connected to')) {
             const deviceName = data.message.split('Connected to ')[1];
             const device = discoveryResultsRef.current.find(d => d.name === deviceName);
-            if (device) setConnectedDevice(device);
+            if (device) {
+                setConnectedDevice(device);
+                setIsSidebarOpen(false); // Auto-close sidebar on mobile
+            }
             setConnectingAddress(null);
         } else if (data.message === 'Disconnected from Apple TV.') {
             setConnectedDevice(null);
+            setIsSidebarOpen(true);
         }
       } else if (data.type === 'error') {
           setConnectingAddress(null);
@@ -103,6 +110,11 @@ function App() {
               setPairingDeviceAddress(null);
               setPairingPin('');
               setPairingError(null);
+              if (data.address) {
+                  setDiscoveryResults(prev => prev.map(d => 
+                      d.address === data.address ? { ...d, paired: true } : d
+                  ));
+              }
           } else if (data.status === 'failed') {
               setIsPairing(false);
               setPairingError(data.message);
@@ -115,6 +127,7 @@ function App() {
       setConnectedDevice(null);
       setDiscoveryResults([]);
       setIsScanning(false);
+      setIsSidebarOpen(true);
     };
 
     return () => newWs.close();
@@ -132,6 +145,7 @@ function App() {
   const handleDisconnect = () => {
     sendMessage({ command: 'disconnect' });
     setConnectedDevice(null);
+    setIsSidebarOpen(true);
   };
 
   const handleStartPairing = (address) => {
@@ -151,11 +165,10 @@ function App() {
 
   const handleDeleteDevice = (device_id) => {
     if (window.confirm('Delete these credentials?')) {
-        // If we are currently controlling this device, disconnect first
         if (connectedDevice?.device_id === device_id) {
             setConnectedDevice(null);
+            setIsSidebarOpen(true);
         }
-        // Optimistically remove from UI immediately
         setDiscoveryResults(prev => prev.filter(d => d.device_id !== device_id));
         sendMessage({ command: 'delete_device', device_id: device_id });
     }
@@ -172,11 +185,18 @@ function App() {
   };
 
   return (
-    <div className="App sidebar-layout">
+    <div className={`App sidebar-layout ${isSidebarOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+      {isSidebarOpen && connectedDevice && <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)}></div>}
+      
       <aside className="sidebar">
         <div className="sidebar-header">
           <Smartphone size={28} color="#007aff" />
           <h2>Remote</h2>
+          {connectedDevice && (
+            <button className="mobile-only sidebar-close-btn" onClick={() => setIsSidebarOpen(false)}>
+              <X size={24} />
+            </button>
+          )}
         </div>
 
         <div className="sidebar-scroll-area">
@@ -292,7 +312,10 @@ function App() {
         {connectedDevice ? (
           <div className="remote-center">
             <div className="remote-top-bar">
-                <button className="close-remote-btn" onClick={handleDisconnect}>
+                <button className="mobile-menu-btn" onClick={() => setIsSidebarOpen(true)}>
+                  <MenuIcon size={24} />
+                </button>
+                <button className="close-remote-btn desktop-only" onClick={handleDisconnect}>
                   <ArrowLeft size={20} /> <span>Back</span>
                 </button>
                 <div className="remote-active-name">
